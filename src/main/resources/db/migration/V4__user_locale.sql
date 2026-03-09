@@ -1,0 +1,2 @@
+-- Preferencia de idioma por usuario (es/en)
+ALTER TABLE users ADD COLUMN locale VARCHAR(10) NOT NULL DEFAULT 'es';

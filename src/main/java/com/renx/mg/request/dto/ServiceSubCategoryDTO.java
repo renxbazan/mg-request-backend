@@ -1,0 +1,17 @@
+package com.renx.mg.request.dto;
+
+public class ServiceSubCategoryDTO {
+    private Long id;
+    private String name;
+    private String description;
+    private Long serviceCategoryId;
+
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+    public Long getServiceCategoryId() { return serviceCategoryId; }
+    public void setServiceCategoryId(Long serviceCategoryId) { this.serviceCategoryId = serviceCategoryId; }
+}
