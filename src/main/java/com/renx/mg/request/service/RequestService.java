@@ -57,6 +57,13 @@ public class RequestService {
 		if (profileId != null && profileId.equals(Constants.REQUESTER_PROFILE_ID)) {
 			request.setRequestStatus(RequestStatusType.PENDING_APPROVAL);
 		}
+		if (profileId != null && profileId.equals(Constants.WORKER_PROFILE_ID)) {
+			boolean companyHasApprovers = companyHasApprovers(request.getSiteId());
+			if (companyHasApprovers) {
+				request.setRequestStatus(RequestStatusType.PENDING_APPROVAL);
+			}
+			// si no tiene aprobadores, se queda en CREATED
+		}
 		request.setCreateDate(new Date());
 		request = requestRepository.save(request);
 		RequestHistory requestHistory = convertToRequestHistory(request, request.getUserId());
@@ -169,6 +176,14 @@ public class RequestService {
 		return requestHistory;
 		
 	}
-	
-	
+
+	/**
+	 * Indica si la empresa del sitio tiene al menos un usuario con perfil Company Admin (aprobadores).
+	 */
+	private boolean companyHasApprovers(Long siteId) {
+		if (siteId == null) return false;
+		Long companyId = siteRepository.findById(siteId).map(Site::getCompanyId).orElse(null);
+		if (companyId == null) return false;
+		return !userRepository.findByCustomer_CompanyIdAndProfileId(companyId, Constants.COMPANY_ADMIN_PROFILE_ID).isEmpty();
+	}
 }

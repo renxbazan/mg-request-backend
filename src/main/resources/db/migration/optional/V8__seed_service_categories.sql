@@ -1,5 +1,6 @@
 -- Categorías y subcategorías de servicio para formulario de solicitudes y tests E2E.
--- Sin esto, service_category está vacía y el formulario New Request no tiene opciones.
+-- Solo se ejecuta cuando spring.flyway.locations incluye optional (no en prod).
+-- Sin esto en prod, service_category se mantiene vacía; las categorías se pueden cargar por otro medio.
 
 INSERT INTO service_category (id, name, description) VALUES
 (1, 'Mantenimiento', 'Servicios de mantenimiento general'),

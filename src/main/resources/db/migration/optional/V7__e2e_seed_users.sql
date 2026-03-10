@@ -1,4 +1,5 @@
 -- Usuarios y personas para pruebas E2E en la BD de test (mgdb_test).
+-- Solo se ejecuta cuando spring.flyway.locations incluye optional (no en prod).
 -- Usa la misma contraseña \"password\" que el usuario admin en V2__seed_data.sql.
 
 -- Personas E2E (company_id = 1 debe existir por V2__seed_data.sql)
@@ -16,4 +17,3 @@ VALUES
   (1002, 'company_admin_e2e', '$2a$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG', 1002, 3, 1),
   (1003, 'worker_e2e', '$2a$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG', 1003, 4, 1)
 ON DUPLICATE KEY UPDATE id = id;
-

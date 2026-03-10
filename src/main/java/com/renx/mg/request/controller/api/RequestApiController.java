@@ -38,6 +38,7 @@ import java.util.HashMap;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -274,6 +275,7 @@ public class RequestApiController {
                     RequestDTO dto = DtoMapper.toDto(r);
                     Map<Long, String> assignedMap = buildAssignedStaffNameMap(List.of(id));
                     DtoMapper.withAssignedStaffName(dto, assignedMap.get(id));
+                    Optional.ofNullable(requestAssignmentRepository.findByRequestId(id)).ifPresent(a -> dto.setAssignedUserId(a.getUserId()));
                     if (current != null) enrichWithRateInfo(dto, r, current);
                     List<RequestHistory> historyList = requestHistoryRepository.findByRequestIdOrderByCreateDateDesc(id);
                     dto.setHistory(mapHistoryToDtos(historyList));

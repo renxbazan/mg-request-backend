@@ -17,6 +17,7 @@ public class RequestDTO {
     private String companyName;
     private String requesterName;
     private String assignedStaffName;
+    private Long assignedUserId;
     private Boolean canRate;
     private Long rating;
     private RequestStatusType requestStatus;
@@ -47,6 +48,8 @@ public class RequestDTO {
     public void setRequesterName(String requesterName) { this.requesterName = requesterName; }
     public String getAssignedStaffName() { return assignedStaffName; }
     public void setAssignedStaffName(String assignedStaffName) { this.assignedStaffName = assignedStaffName; }
+    public Long getAssignedUserId() { return assignedUserId; }
+    public void setAssignedUserId(Long assignedUserId) { this.assignedUserId = assignedUserId; }
     public Boolean getCanRate() { return canRate; }
     public void setCanRate(Boolean canRate) { this.canRate = canRate; }
     public Long getRating() { return rating; }
