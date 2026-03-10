@@ -15,7 +15,6 @@ import com.renx.mg.request.model.ServiceSubCategory;
 import com.renx.mg.request.model.Site;
 import com.renx.mg.request.model.User;
 import com.renx.mg.request.repository.CompanyRepository;
-import com.renx.mg.request.repository.RequestAssignmentRepository;
 import com.renx.mg.request.repository.RequestRepository;
 import com.renx.mg.request.repository.CustomerRepository;
 import com.renx.mg.request.repository.ProfileRepository;
@@ -25,8 +24,10 @@ import com.renx.mg.request.repository.SiteRepository;
 import com.renx.mg.request.repository.UserRepository;
 import com.renx.mg.request.service.EmailService;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -51,6 +52,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Transactional
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class RequestApiIntegrationTest {
 
     @Autowired
@@ -82,8 +85,6 @@ class RequestApiIntegrationTest {
     @Autowired
     private RequestRepository requestRepository;
     @Autowired
-    private RequestAssignmentRepository requestAssignmentRepository;
-    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     private Long siteId;
@@ -91,14 +92,33 @@ class RequestApiIntegrationTest {
     private Long serviceSubCategoryId;
     private String testUsername;
     private String testPassword = "secret";
-    private Long testUserId;
+
+    @BeforeAll
+    void cleanupIntegrationTestData() {
+        String like = "reqtest_%";
+        jdbcTemplate.update(
+                "DELETE rh FROM request_history rh JOIN request r ON r.id = rh.request_id WHERE r.description LIKE ?",
+                like);
+        jdbcTemplate.update(
+                "DELETE ra FROM request_assignment ra JOIN request r ON r.id = ra.request_id WHERE r.description LIKE ?",
+                like);
+        jdbcTemplate.update("DELETE FROM request WHERE description LIKE ?", like);
+        jdbcTemplate.update("DELETE FROM users WHERE username LIKE ?", like);
+        jdbcTemplate.update("DELETE FROM customer WHERE first_name LIKE ? OR last_name LIKE ? OR email LIKE ?",
+                like, like, like);
+        jdbcTemplate.update("DELETE FROM site WHERE name LIKE ?", like);
+        jdbcTemplate.update("DELETE FROM service_sub_category WHERE name LIKE ?", like);
+        jdbcTemplate.update("DELETE FROM service_category WHERE name LIKE ?", like);
+        jdbcTemplate.update("DELETE FROM company WHERE name LIKE ?", like);
+    }
 
     @BeforeEach
     void setUp() {
-        testUsername = "reqtest_" + UUID.randomUUID().toString().substring(0, 8);
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        testUsername = "reqtest_" + suffix;
         transactionTemplate.executeWithoutResult(status -> {
             Company company = new Company();
-            company.setName("Test Co");
+            company.setName("reqtest_TestCo_" + suffix);
             company.setCompanyType(CompanyType.COMPANY);
             company = companyRepository.save(company);
 
@@ -106,27 +126,27 @@ class RequestApiIntegrationTest {
                     .orElseThrow(() -> new IllegalStateException("Profile 2 (Requester) must exist from seed"));
 
             Customer customer = new Customer();
-            customer.setFirstName("Test");
+            customer.setFirstName("reqtest_Test");
             customer.setLastName("User");
             customer.setCompanyId(company.getId());
-            customer.setEmail("test@test.com");
+            customer.setEmail("reqtest_test_" + suffix + "@test.com");
             customer.setEmployee(true);
             customer = customerRepository.save(customer);
 
             Site site = new Site();
-            site.setName("Main");
+            site.setName("reqtest_Main_" + suffix);
             site.setCompanyId(company.getId());
             site = siteRepository.save(site);
             siteId = site.getId();
 
             ServiceCategory cat = new ServiceCategory();
-            cat.setName("Category1");
+            cat.setName("reqtest_Category1_" + suffix);
             cat.setDescription("Desc");
             cat = serviceCategoryRepository.save(cat);
             serviceCategoryId = cat.getId();
 
             ServiceSubCategory sub = new ServiceSubCategory();
-            sub.setName("Sub1");
+            sub.setName("reqtest_Sub1_" + suffix);
             sub.setDescription("SubDesc");
             sub.setServiceCategoryId(cat.getId());
             sub = serviceSubCategoryRepository.save(sub);
@@ -139,7 +159,6 @@ class RequestApiIntegrationTest {
             user.setCustomerId(customer.getId());
             user.setSiteId(site.getId());
             user = userRepository.save(user);
-            testUserId = user.getId();
         });
     }
 
@@ -205,14 +224,14 @@ class RequestApiIntegrationTest {
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     void getMyRequests_withToken_returns200AndContainsCreatedRequest() throws Exception {
-        // Usar usuario del seed (admin/password) y crear request vía repositorio para evitar 403 en segunda petición
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
         long requestId = transactionTemplate.execute(status -> {
             ServiceCategory cat = new ServiceCategory();
-            cat.setName("MyReqCat");
+            cat.setName("reqtest_MyReqCat_" + suffix);
             cat.setDescription("Desc");
             cat = serviceCategoryRepository.save(cat);
             ServiceSubCategory sub = new ServiceSubCategory();
-            sub.setName("MyReqSub");
+            sub.setName("reqtest_MyReqSub_" + suffix);
             sub.setDescription("Sub");
             sub.setServiceCategoryId(cat.getId());
             sub = serviceSubCategoryRepository.save(sub);
@@ -221,7 +240,7 @@ class RequestApiIntegrationTest {
             req.setSiteId(1L);
             req.setServiceCategoryId(cat.getId());
             req.setServiceSubCategoryId(sub.getId());
-            req.setDescription("My request");
+            req.setDescription("reqtest_My request");
             req.setPriority("L");
             req.setRequestStatus(RequestStatusType.PENDING_APPROVAL);
             req.setCreateDate(new java.util.Date());
@@ -261,12 +280,14 @@ class RequestApiIntegrationTest {
     }
 
     @Test
-    void getRequests_list_withToken_returns200AndArray() throws Exception {
+    void getRequests_list_withToken_returns200AndPaginated() throws Exception {
         String token = obtainToken();
         mockMvc.perform(get("/api/requests")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray());
+                .andExpect(jsonPath("$.items").isArray())
+                .andExpect(jsonPath("$.page").exists())
+                .andExpect(jsonPath("$.totalElements").exists());
     }
 
     @Test
@@ -327,27 +348,46 @@ class RequestApiIntegrationTest {
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     void getAssignedRequests_withToken_hasAssignments_returnsAssignedRequests() throws Exception {
-        Long requestId = transactionTemplate.execute(status -> {
+        var fixture = transactionTemplate.execute(status -> {
+            Profile profile = profileRepository.findById(2L).orElseThrow();
+            Customer customer = new Customer();
+            customer.setFirstName("reqtest_Assigned");
+            customer.setLastName("User");
+            customer.setCompanyId(1L);
+            customer.setEmail("reqtest_assigned@test.com");
+            customer.setEmployee(true);
+            customer = customerRepository.save(customer);
+            User user = new User();
+            user.setUsername("reqtest_assigned_" + UUID.randomUUID().toString().substring(0, 8));
+            user.setPassword(passwordEncoder.encode("secret"));
+            user.setProfileId(profile.getId());
+            user.setCustomerId(customer.getId());
+            user.setSiteId(1L);
+            user = userRepository.save(user);
+
             Request req = new Request();
             req.setUserId(1L);
-            req.setSiteId(siteId);
-            req.setServiceCategoryId(serviceCategoryId);
-            req.setServiceSubCategoryId(serviceSubCategoryId);
-            req.setDescription("Assigned request");
+            req.setSiteId(1L);
+            req.setServiceCategoryId(1L);
+            req.setServiceSubCategoryId(1L);
+            req.setDescription("reqtest_Assigned request");
             req.setPriority("M");
             req.setRequestStatus(RequestStatusType.CREATED);
             req.setCreateDate(new java.util.Date());
             req = requestRepository.save(req);
 
             jdbcTemplate.update("INSERT INTO request_assignment (request_id, user_id) VALUES (?, ?)",
-                    req.getId(), testUserId);
+                    req.getId(), user.getId());
 
-            return req.getId();
+            return new long[]{req.getId(), user.getId()};
         });
 
+        long requestId = fixture[0];
+        long assignedUserId = fixture[1];
         SecurityContextHolder.clearContext();
 
-        String token = obtainToken();
+        String token = obtainTokenForUser(
+                userRepository.findById(assignedUserId).orElseThrow().getUsername(), "secret");
         mockMvc.perform(get("/api/requests/assigned")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
@@ -359,21 +399,40 @@ class RequestApiIntegrationTest {
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     void rate_asRequester_returns200() throws Exception {
-        Long requestId = transactionTemplate.execute(status -> {
+        var fixture = transactionTemplate.execute(status -> {
+            Profile profile = profileRepository.findById(2L).orElseThrow();
+            Customer customer = new Customer();
+            customer.setFirstName("reqtest_Rate");
+            customer.setLastName("User");
+            customer.setCompanyId(1L);
+            customer.setEmail("reqtest_rate@test.com");
+            customer.setEmployee(true);
+            customer = customerRepository.save(customer);
+            User user = new User();
+            user.setUsername("reqtest_rate_" + UUID.randomUUID().toString().substring(0, 8));
+            user.setPassword(passwordEncoder.encode("secret"));
+            user.setProfileId(profile.getId());
+            user.setCustomerId(customer.getId());
+            user.setSiteId(1L);
+            user = userRepository.save(user);
+
             Request req = new Request();
-            req.setUserId(testUserId);
-            req.setSiteId(siteId);
-            req.setServiceCategoryId(serviceCategoryId);
-            req.setServiceSubCategoryId(serviceSubCategoryId);
-            req.setDescription("Request to rate");
+            req.setUserId(user.getId());
+            req.setSiteId(1L);
+            req.setServiceCategoryId(1L);
+            req.setServiceSubCategoryId(1L);
+            req.setDescription("reqtest_Request to rate");
             req.setPriority("M");
             req.setRequestStatus(RequestStatusType.DONE);
             req.setCreateDate(new java.util.Date());
-            return requestRepository.save(req).getId();
+            req = requestRepository.save(req);
+            return new long[]{req.getId(), user.getId()};
         });
+        long requestId = fixture[0];
         SecurityContextHolder.clearContext();
 
-        String token = obtainToken();
+        String token = obtainTokenForUser(
+                userRepository.findById(fixture[1]).orElseThrow().getUsername(), "secret");
         mockMvc.perform(put("/api/requests/" + requestId + "/rate")
                         .header("Authorization", "Bearer " + token)
                         .param("rating", "5")
@@ -386,47 +445,49 @@ class RequestApiIntegrationTest {
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     void rate_asCompanyAdminOfRequestCompany_returns200() throws Exception {
-        Long requestId = transactionTemplate.execute(status -> {
+        var fixture = transactionTemplate.execute(status -> {
             Profile requesterProfile = profileRepository.findById(2L).orElseThrow();
             Customer requesterCustomer = new Customer();
-            requesterCustomer.setFirstName("Req");
+            requesterCustomer.setFirstName("reqtest_Req");
             requesterCustomer.setLastName("User");
-            requesterCustomer.setCompanyId(siteRepository.findById(siteId).orElseThrow().getCompanyId());
+            requesterCustomer.setCompanyId(1L);
             requesterCustomer = customerRepository.save(requesterCustomer);
             User requester = new User();
-            requester.setUsername("req_" + UUID.randomUUID().toString().substring(0, 8));
+            requester.setUsername("reqtest_req_" + UUID.randomUUID().toString().substring(0, 8));
             requester.setPassword(passwordEncoder.encode("x"));
             requester.setProfileId(requesterProfile.getId());
             requester.setCustomerId(requesterCustomer.getId());
+            requester.setSiteId(1L);
             requester = userRepository.save(requester);
 
             Request req = new Request();
             req.setUserId(requester.getId());
-            req.setSiteId(siteId);
-            req.setServiceCategoryId(serviceCategoryId);
-            req.setServiceSubCategoryId(serviceSubCategoryId);
-            req.setDescription("Request for company admin");
+            req.setSiteId(1L);
+            req.setServiceCategoryId(1L);
+            req.setServiceSubCategoryId(1L);
+            req.setDescription("reqtest_Request for company admin");
             req.setPriority("M");
             req.setRequestStatus(RequestStatusType.DONE);
             req.setCreateDate(new java.util.Date());
-            return requestRepository.save(req).getId();
-        });
+            req = requestRepository.save(req);
 
-        Long companyAdminId = transactionTemplate.execute(status -> {
             Profile companyAdminProfile = profileRepository.findById(3L).orElseThrow();
-            Long companyId = siteRepository.findById(siteId).orElseThrow().getCompanyId();
             Customer adminCustomer = new Customer();
-            adminCustomer.setFirstName("Company");
+            adminCustomer.setFirstName("reqtest_Company");
             adminCustomer.setLastName("Admin");
-            adminCustomer.setCompanyId(companyId);
+            adminCustomer.setCompanyId(1L);
             adminCustomer = customerRepository.save(adminCustomer);
             User adminUser = new User();
-            adminUser.setUsername("compadmin_" + UUID.randomUUID().toString().substring(0, 8));
+            adminUser.setUsername("reqtest_compadmin_" + UUID.randomUUID().toString().substring(0, 8));
             adminUser.setPassword(passwordEncoder.encode("x"));
             adminUser.setProfileId(companyAdminProfile.getId());
             adminUser.setCustomerId(adminCustomer.getId());
-            return userRepository.save(adminUser).getId();
+            adminUser = userRepository.save(adminUser);
+
+            return new long[]{req.getId(), adminUser.getId()};
         });
+        long requestId = fixture[0];
+        long companyAdminId = fixture[1];
 
         SecurityContextHolder.clearContext();
 
@@ -443,13 +504,28 @@ class RequestApiIntegrationTest {
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     void rate_asOtherUser_returns403() throws Exception {
-        Long requestId = transactionTemplate.execute(status -> {
+        var fixture = transactionTemplate.execute(status -> {
+            Profile requesterProfile = profileRepository.findById(2L).orElseThrow();
+            Customer requesterCustomer = new Customer();
+            requesterCustomer.setFirstName("reqtest_Requester");
+            requesterCustomer.setLastName("Other");
+            requesterCustomer.setCompanyId(1L);
+            requesterCustomer.setEmployee(true);
+            requesterCustomer = customerRepository.save(requesterCustomer);
+            User requester = new User();
+            requester.setUsername("reqtest_reqother_" + UUID.randomUUID().toString().substring(0, 8));
+            requester.setPassword(passwordEncoder.encode("x"));
+            requester.setProfileId(requesterProfile.getId());
+            requester.setCustomerId(requesterCustomer.getId());
+            requester.setSiteId(1L);
+            requester = userRepository.save(requester);
+
             Request req = new Request();
-            req.setUserId(testUserId);
-            req.setSiteId(siteId);
-            req.setServiceCategoryId(serviceCategoryId);
-            req.setServiceSubCategoryId(serviceSubCategoryId);
-            req.setDescription("Request");
+            req.setUserId(requester.getId());
+            req.setSiteId(1L);
+            req.setServiceCategoryId(1L);
+            req.setServiceSubCategoryId(1L);
+            req.setDescription("reqtest_Request");
             req.setPriority("M");
             req.setRequestStatus(RequestStatusType.DONE);
             req.setCreateDate(new java.util.Date());
@@ -457,13 +533,13 @@ class RequestApiIntegrationTest {
 
             Profile workerProfile = profileRepository.findById(2L).orElseThrow();
             Customer workerCustomer = new Customer();
-            workerCustomer.setFirstName("Worker");
+            workerCustomer.setFirstName("reqtest_Worker");
             workerCustomer.setLastName("Other");
-            workerCustomer.setCompanyId(siteRepository.findById(siteId).orElseThrow().getCompanyId());
+            workerCustomer.setCompanyId(1L);
             workerCustomer.setEmployee(true);
             workerCustomer = customerRepository.save(workerCustomer);
             User worker = new User();
-            worker.setUsername("worker_" + UUID.randomUUID().toString().substring(0, 8));
+            worker.setUsername("reqtest_worker_" + UUID.randomUUID().toString().substring(0, 8));
             worker.setPassword(passwordEncoder.encode("x"));
             worker.setProfileId(workerProfile.getId());
             worker.setCustomerId(workerCustomer.getId());
@@ -472,13 +548,10 @@ class RequestApiIntegrationTest {
             jdbcTemplate.update("INSERT INTO request_assignment (request_id, user_id) VALUES (?, ?)",
                     req.getId(), worker.getId());
 
-            return req.getId();
+            return new long[]{req.getId(), worker.getId()};
         });
-
-        Long workerUserId = transactionTemplate.execute(status -> {
-            var a = requestAssignmentRepository.findByRequestId(requestId);
-            return a != null ? a.getUserId() : null;
-        });
+        long requestId = fixture[0];
+        long workerUserId = fixture[1];
         SecurityContextHolder.clearContext();
 
         String workerToken = obtainTokenForUser(
@@ -492,21 +565,40 @@ class RequestApiIntegrationTest {
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     void rate_responseIncludesCanRateAndRating() throws Exception {
-        Long requestId = transactionTemplate.execute(status -> {
+        var fixture = transactionTemplate.execute(status -> {
+            Profile profile = profileRepository.findById(2L).orElseThrow();
+            Customer customer = new Customer();
+            customer.setFirstName("reqtest_RateResp");
+            customer.setLastName("User");
+            customer.setCompanyId(1L);
+            customer.setEmail("reqtest_rateresp@test.com");
+            customer.setEmployee(true);
+            customer = customerRepository.save(customer);
+            User user = new User();
+            user.setUsername("reqtest_rateresp_" + UUID.randomUUID().toString().substring(0, 8));
+            user.setPassword(passwordEncoder.encode("secret"));
+            user.setProfileId(profile.getId());
+            user.setCustomerId(customer.getId());
+            user.setSiteId(1L);
+            user = userRepository.save(user);
+
             Request req = new Request();
-            req.setUserId(testUserId);
-            req.setSiteId(siteId);
-            req.setServiceCategoryId(serviceCategoryId);
-            req.setServiceSubCategoryId(serviceSubCategoryId);
-            req.setDescription("Request");
+            req.setUserId(user.getId());
+            req.setSiteId(1L);
+            req.setServiceCategoryId(1L);
+            req.setServiceSubCategoryId(1L);
+            req.setDescription("reqtest_Request");
             req.setPriority("M");
             req.setRequestStatus(RequestStatusType.DONE);
             req.setCreateDate(new java.util.Date());
-            return requestRepository.save(req).getId();
+            req = requestRepository.save(req);
+            return new long[]{req.getId(), user.getId()};
         });
+        long requestId = fixture[0];
         SecurityContextHolder.clearContext();
 
-        String token = obtainToken();
+        String token = obtainTokenForUser(
+                userRepository.findById(fixture[1]).orElseThrow().getUsername(), "secret");
         mockMvc.perform(put("/api/requests/" + requestId + "/rate")
                         .header("Authorization", "Bearer " + token)
                         .param("rating", "5"))

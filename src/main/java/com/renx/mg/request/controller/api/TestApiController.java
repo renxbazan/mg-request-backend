@@ -3,12 +3,15 @@ package com.renx.mg.request.controller.api;
 import com.renx.mg.request.common.Constants;
 import com.renx.mg.request.model.User;
 import com.renx.mg.request.security.CurrentUserService;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import javax.sql.DataSource;
 import java.util.Map;
 
 /**
@@ -21,10 +24,12 @@ public class TestApiController {
 
     private final JdbcTemplate jdbcTemplate;
     private final CurrentUserService currentUserService;
+    private final DataSource dataSource;
 
-    public TestApiController(JdbcTemplate jdbcTemplate, CurrentUserService currentUserService) {
+    public TestApiController(JdbcTemplate jdbcTemplate, CurrentUserService currentUserService, DataSource dataSource) {
         this.jdbcTemplate = jdbcTemplate;
         this.currentUserService = currentUserService;
+        this.dataSource = dataSource;
     }
 
     @PostMapping("/cleanup")
@@ -77,5 +82,42 @@ public class TestApiController {
                 )
         ));
     }
+
+    /**
+     * Inserta datos demo (prefijo demo_) para explorar dashboards en perfil test.
+     * Idempotente: primero limpia demo_, luego ejecuta el seed.
+     * No afecta reqtest_ (JUnit) ni e2e_ (E2E).
+     */
+    @PostMapping("/seed-demo")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> seedDemo() {
+        User current = currentUserService.getCurrentUser();
+        if (current == null || !Constants.SUPER_ADMIN_PROFILE_ID.equals(current.getProfileId())) {
+            return ResponseEntity.status(403).body(Map.of("message", "FORBIDDEN"));
+        }
+        // Limpiar datos demo previos para idempotencia
+        cleanupByPrefix("demo_");
+        var populator = new ResourceDatabasePopulator(new ClassPathResource("db/seed-demo.sql"));
+        populator.execute(dataSource);
+        return ResponseEntity.ok(Map.of("message", "Demo data seeded successfully"));
+    }
+
+    private void cleanupByPrefix(String prefix) {
+        String like = prefix + "%";
+        jdbcTemplate.update(
+                "DELETE rh FROM request_history rh JOIN request r ON r.id = rh.request_id WHERE r.description LIKE ?",
+                like
+        );
+        jdbcTemplate.update(
+                "DELETE ra FROM request_assignment ra JOIN request r ON r.id = ra.request_id WHERE r.description LIKE ?",
+                like
+        );
+        jdbcTemplate.update("DELETE FROM request WHERE description LIKE ?", like);
+        jdbcTemplate.update("DELETE FROM users WHERE username LIKE ?", like);
+        jdbcTemplate.update("DELETE FROM customer WHERE first_name LIKE ? OR last_name LIKE ? OR email LIKE ?", like, like, like);
+        jdbcTemplate.update("DELETE FROM site WHERE name LIKE ?", like);
+        jdbcTemplate.update("DELETE FROM company WHERE name LIKE ?", like);
+    }
+
 }
 

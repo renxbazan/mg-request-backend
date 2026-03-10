@@ -86,7 +86,7 @@ public class RequestService {
 	}
 
 	/**
-	 * Envía email al worker asignado (igual que en la versión antigua).
+	 * Envía email al worker asignado (async, HTML con plantilla de marca).
 	 */
 	public void sendEmailOnAssign(Long requestId, Long assignedUserId) {
 		try {
@@ -98,9 +98,12 @@ public class RequestService {
 			Customer customer = assignedUser.getCustomerId() != null ? customerRepository.findById(assignedUser.getCustomerId()).orElse(null) : null;
 			if (customer == null || customer.getEmail() == null) return;
 			String[] to = { customer.getEmail() };
-			String subject = "New Request for " + site.getCompany().getName() + " - " + site.getName() + " priority : " + request.getPriority();
-			String mailBody = "New Request to " + site.getCompany().getName() + " - " + site.getName() + "\nRequest Detail: " + request.getDescription();
-			emailService.sendMessage(to, subject, mailBody);
+			String companyName = site.getCompany().getName();
+			String siteName = site.getName();
+			String priorityLabel = EmailService.priorityToDisplayText(request.getPriority());
+			String subject = "New Request for " + companyName + " - " + siteName + " (priority: " + priorityLabel + ")";
+			String bodyHtml = emailService.buildNewRequestBody(companyName, siteName, request.getPriority(), request.getDescription(), requestId);
+			emailService.sendHtmlMessageAsync(to, subject, "New request assigned to you", bodyHtml);
 		} catch (Exception e) {
 			log.error("Error sending email on assign, requestId={}, assignedUserId={}: {}", requestId, assignedUserId, e.getMessage(), e);
 		}
@@ -112,16 +115,18 @@ public class RequestService {
 			if (site == null || site.getCompany() == null) return;
 			String companyName = site.getCompany().getName();
 			String siteName = site.getName();
-			String subject = "New Request for " + companyName + " - " + siteName + " priority : " + request.getPriority();
-			String mailBody = "New Request to " + companyName + " - " + siteName + "\nRequest Detail: " + request.getDescription();
+			Long requestId = request.getId();
+			String priorityLabel = EmailService.priorityToDisplayText(request.getPriority());
+			String bodyHtml = emailService.buildNewRequestBody(companyName, siteName, request.getPriority(), request.getDescription(), requestId);
 			if (request.getRequestStatus() == RequestStatusType.CREATED) {
 				String[] to = { "aacosta@mgservicesunlimited.com" };
-				emailService.sendMessage(to, subject, mailBody);
+				String subject = "New Request for " + companyName + " - " + siteName + " (priority: " + priorityLabel + ")";
+				emailService.sendHtmlMessageAsync(to, subject, "New request", bodyHtml);
 			} else {
 				String[] to = emailService.adminCompanyEmail(site.getCompanyId());
-				subject += " APPROVAL PENDING";
-				mailBody += "\nApproval Pending";
-				emailService.sendMessage(to, subject, mailBody);
+				String subject = "New Request for " + companyName + " - " + siteName + " — APPROVAL PENDING";
+				String bodyWithPending = bodyHtml + "<p style=\"margin-top:16px;padding:12px;background:#e8f4fc;border-left:4px solid #61a1d9;border-radius:4px;\"><strong>Approval pending.</strong></p>";
+				emailService.sendHtmlMessageAsync(to, subject, "New request — approval pending", bodyWithPending);
 			}
 		} catch (Exception e) {
 			log.error("Error sending email on create, requestId={}: {}", request.getId(), e.getMessage(), e);
@@ -134,14 +139,19 @@ public class RequestService {
 			if (requester == null || requester.getCustomerId() == null) return;
 			Customer requesterCustomer = customerRepository.findById(requester.getCustomerId()).orElse(null);
 			if (requesterCustomer == null || requesterCustomer.getEmail() == null) return;
-			String[] to = { requesterCustomer.getEmail(), "aacosta@mgservicesunlimited.com" };
-			String detail = "Request Detail: " + request.getDescription() + ",\n";
+			String detail = request.getDescription() != null ? request.getDescription() : "";
+			Long requestId = request.getId();
 			if (newStatus == RequestStatusType.CREATED) {
-				emailService.sendMessage(to, "Request Approved", "Dear " + requesterCustomer.getFirstName() + ",\n" + detail + "Has been approved!");
+				String[] to = { requesterCustomer.getEmail(), "aacosta@mgservicesunlimited.com" };
+				String body = emailService.buildStatusChangeBody(requesterCustomer.getFirstName(), "Your request has been <strong>approved</strong>.", detail, requestId);
+				emailService.sendHtmlMessageAsync(to, "Request approved", "Request approved", body);
 			} else if (newStatus == RequestStatusType.REJECTED) {
-				emailService.sendMessage(to, "Request rejected", "Dear " + requesterCustomer.getFirstName() + ",\n" + detail + "Has been Rejected!");
+				String[] to = { requesterCustomer.getEmail(), "aacosta@mgservicesunlimited.com" };
+				String body = emailService.buildStatusChangeBody(requesterCustomer.getFirstName(), "Your request has been <strong>rejected</strong>.", detail, requestId);
+				emailService.sendHtmlMessageAsync(to, "Request rejected", "Request rejected", body);
 			} else if (newStatus == RequestStatusType.DONE) {
-				emailService.sendMessage(new String[] { requesterCustomer.getEmail() }, "Request Completion", "Dear " + requesterCustomer.getFirstName() + ",\n" + detail + "Has been completed!");
+				String body = emailService.buildStatusChangeBody(requesterCustomer.getFirstName(), "Your request has been <strong>completed</strong>.", detail, requestId);
+				emailService.sendHtmlMessageAsync(new String[] { requesterCustomer.getEmail() }, "Request completed", "Request completed", body);
 			}
 		} catch (Exception e) {
 			log.error("Error sending email on status change, requestId={}, newStatus={}: {}", request.getId(), newStatus, e.getMessage(), e);

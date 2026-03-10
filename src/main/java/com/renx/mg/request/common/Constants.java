@@ -6,4 +6,5 @@ public class Constants {
 	public static final Long REQUESTER_PROFILE_ID = 2L;
 	public static final Long COMPANY_ADMIN_PROFILE_ID = 3L;
 	public static final Long SUPER_ADMIN_PROFILE_ID = 1L;
+	public static final Long WORKER_PROFILE_ID = 4L;
 }

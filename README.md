@@ -88,6 +88,83 @@ El backend expone la API REST consumida por el frontend `mg-request-frontend` y 
   - Filtros del listado.
   - Manejo de errores 403 sin redirigir al login.
 
+### Reset de BD de test (mgdb_test)
+
+Si la base `mgdb_test` acumula datos duplicados por uso repetido o E2E, puedes resetearla:
+
+**Opción 1 – Flyway clean + migrate** (con backend detenido):
+
+```bash
+cd mg-request-backend
+mvn flyway:clean flyway:migrate -Dflyway.url=jdbc:mysql://localhost:3307/mgdb_test -Dflyway.user=root -Dflyway.password=admin
+```
+
+**Opción 2 – Borrar y recrear la BD**:
+
+```sql
+DROP DATABASE mgdb_test;
+CREATE DATABASE mgdb_test;
+```
+
+Al arrancar el backend con perfil `test`, Flyway aplicará las migraciones.
+
+**Limpieza automática E2E:** Los tests E2E de Playwright llaman a `POST /api/test/cleanup` antes y después de la suite para borrar datos con prefijos `e2e_` y `reqtest_` (evita acumulación de datos de tests JUnit e E2E). Si ves duplicados al navegar tras `mvn test`, ejecuta `npm run e2e` para limpiar, o recrea la BD con las SQL anteriores.
+
+### Datos demo para dashboards (perfil test)
+
+Para explorar los dashboards con datos de ejemplo sin afectar a JUnit ni a los E2E:
+
+1. Levanta el backend con perfil `test`.
+2. Ejecuta el script:
+
+```bash
+cd mg-request-backend
+./scripts/seed-demo.sh
+```
+
+Los datos usan el prefijo `demo_` y no son limpiados por los tests. Puedes ejecutar el script varias veces (es idempotente). Para borrarlos: `POST /api/test/cleanup` con `{"prefix":"demo_"}`.
+
+## Despliegue en AWS
+
+### RDS MySQL
+
+Para producción en AWS, usa RDS MySQL (por ejemplo `db.t3.micro` o `db.t3.small`):
+
+- Crea una instancia RDS MySQL 8 en la misma VPC que Elastic Beanstalk o ECS.
+- Crea la base de datos `mgdb` (o el nombre que uses).
+- Configura el security group para permitir conexiones en el puerto 3306 solo desde el security group del backend.
+- Flyway aplica las migraciones automáticamente al arrancar la aplicación.
+
+### Variables de entorno para producción
+
+Configura estas variables en Elastic Beanstalk (Configuration → Software → Environment properties) o en ECS (Task Definition):
+
+| Variable | Descripción | Ejemplo |
+|----------|-------------|---------|
+| `SPRING_DATASOURCE_URL` | JDBC URL de RDS | `jdbc:mysql://tu-rds.region.rds.amazonaws.com:3306/mgdb` |
+| `SPRING_DATASOURCE_USERNAME` | Usuario de la base de datos | `admin` |
+| `SPRING_DATASOURCE_PASSWORD` | Contraseña de la base de datos | (segura) |
+| `JWT_SECRET` | Clave para firmar JWT (mín. 256 bits) | (clave segura) |
+| `JWT_EXPIRATION_MS` | Expiración del token en ms | `86400000` |
+| `SPRING_PROFILES_ACTIVE` | Perfil de Spring | `prod` |
+| `SPRING_MAIL_HOST`, `SPRING_MAIL_USERNAME`, `SPRING_MAIL_PASSWORD` | (Opcional) Configuración de email | — |
+
+### Docker (ECS / App Runner)
+
+```bash
+docker build -t mg-request-backend .
+docker run -e SPRING_DATASOURCE_URL=... -e JWT_SECRET=... -p 8080:8080 mg-request-backend
+```
+
+### Elastic Beanstalk (JAR)
+
+1. `mvn package -DskipTests`
+2. Crear aplicación EB con plataforma Java 17 (Corretto).
+3. Subir el JAR o configurar CodeBuild para despliegue automático.
+4. El archivo `.ebextensions/01_jvm.config` configura JVM para instancias pequeñas.
+
+Ver `mg-request-frontend/docs/DEPLOY-AWS.md` para la guía completa de despliegue (frontend + backend).
+
 ## Seguridad en producción
 
 - **Variables de entorno obligatorias:** No uses los valores por defecto en producción. Configura al menos:

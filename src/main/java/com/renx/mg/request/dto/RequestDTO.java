@@ -23,6 +23,7 @@ public class RequestDTO {
     private Date createDate;
     private String priority;
     private List<RequestHistoryDTO> history;
+    private List<RequestAttachmentDTO> attachments;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -58,4 +59,6 @@ public class RequestDTO {
     public void setPriority(String priority) { this.priority = priority; }
     public List<RequestHistoryDTO> getHistory() { return history; }
     public void setHistory(List<RequestHistoryDTO> history) { this.history = history; }
+    public List<RequestAttachmentDTO> getAttachments() { return attachments; }
+    public void setAttachments(List<RequestAttachmentDTO> attachments) { this.attachments = attachments; }
 }
