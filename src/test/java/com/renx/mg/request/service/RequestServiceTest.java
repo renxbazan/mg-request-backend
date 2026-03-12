@@ -24,6 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.Optional;
 
+import com.renx.mg.request.service.RequestApproverService;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.verify;
@@ -46,6 +48,8 @@ class RequestServiceTest {
     private SiteRepository siteRepository;
     @Mock
     private CustomerRepository customerRepository;
+    @Mock
+    private RequestApproverService requestApproverService;
 
     private RequestService requestService;
 
@@ -59,6 +63,7 @@ class RequestServiceTest {
         org.springframework.test.util.ReflectionTestUtils.setField(requestService, "emailService", emailService);
         org.springframework.test.util.ReflectionTestUtils.setField(requestService, "siteRepository", siteRepository);
         org.springframework.test.util.ReflectionTestUtils.setField(requestService, "customerRepository", customerRepository);
+        org.springframework.test.util.ReflectionTestUtils.setField(requestService, "requestApproverService", requestApproverService);
     }
 
     @Test
@@ -125,8 +130,7 @@ class RequestServiceTest {
         site.setId(1L);
         site.setCompanyId(100L);
         when(siteRepository.findById(1L)).thenReturn(Optional.of(site));
-        when(userRepository.findByCustomer_CompanyIdAndProfileId(100L, Constants.COMPANY_ADMIN_PROFILE_ID))
-                .thenReturn(List.of(new User()));
+        when(requestApproverService.hasApproversFor(100L, 1L)).thenReturn(true);
 
         Request result = requestService.createRequest(request, Constants.WORKER_PROFILE_ID);
 
@@ -151,8 +155,7 @@ class RequestServiceTest {
         site.setId(1L);
         site.setCompanyId(100L);
         when(siteRepository.findById(1L)).thenReturn(Optional.of(site));
-        when(userRepository.findByCustomer_CompanyIdAndProfileId(100L, Constants.COMPANY_ADMIN_PROFILE_ID))
-                .thenReturn(List.of());
+        when(requestApproverService.hasApproversFor(100L, 1L)).thenReturn(false);
 
         Request result = requestService.createRequest(request, Constants.WORKER_PROFILE_ID);
 

@@ -23,6 +23,7 @@ import com.renx.mg.request.repository.SiteRepository;
 import com.renx.mg.request.repository.UserRepository;
 import com.renx.mg.request.security.CurrentUserService;
 import com.renx.mg.request.service.AttachmentStorageService;
+import com.renx.mg.request.service.RequestApproverService;
 import com.renx.mg.request.service.RequestService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
@@ -66,6 +67,7 @@ public class RequestApiController {
     private final CustomerRepository customerRepository;
     private final UserRepository userRepository;
     private final SiteRepository siteRepository;
+    private final RequestApproverService requestApproverService;
     private final ObjectMapper objectMapper;
 
     @Value("${mg.attachments.max-file-size-bytes:2097152}")
@@ -83,6 +85,7 @@ public class RequestApiController {
                                 CustomerRepository customerRepository,
                                 UserRepository userRepository,
                                 SiteRepository siteRepository,
+                                RequestApproverService requestApproverService,
                                 ObjectMapper objectMapper) {
         this.requestRepository = requestRepository;
         this.requestAssignmentRepository = requestAssignmentRepository;
@@ -94,7 +97,18 @@ public class RequestApiController {
         this.customerRepository = customerRepository;
         this.userRepository = userRepository;
         this.siteRepository = siteRepository;
+        this.requestApproverService = requestApproverService;
         this.objectMapper = objectMapper;
+    }
+
+    private boolean canCurrentUserApproveReject(User current, Request request) {
+        if (current == null || request == null) return false;
+        if (Constants.SUPER_ADMIN_PROFILE_ID.equals(current.getProfileId())) return true;
+        if (request.getSiteId() == null) return false;
+        Long companyId = siteRepository.findById(request.getSiteId()).map(Site::getCompanyId).orElse(null);
+        if (companyId == null) return false;
+        List<Long> approverIds = requestApproverService.findUserIdsWhoCanApprove(companyId, request.getSiteId());
+        return approverIds.contains(current.getId());
     }
 
     private boolean canCurrentUserRate(User current, Request request) {
@@ -382,7 +396,10 @@ public class RequestApiController {
     public ResponseEntity<RequestDTO> approve(@PathVariable Long id) {
         User current = currentUserService.getCurrentUser();
         if (current == null) return ResponseEntity.status(403).build();
-        return requestRepository.findById(id)
+        Request request = requestRepository.findById(id).orElse(null);
+        if (request == null) return ResponseEntity.notFound().build();
+        if (!canCurrentUserApproveReject(current, request)) return ResponseEntity.status(403).build();
+        return Optional.of(request)
                 .map(r -> requestService.changeRequestStatus(id, RequestStatusType.CREATED, current.getId(), null, null))
                 .map(r -> {
                     RequestDTO dto = DtoMapper.toDto(r);
@@ -399,7 +416,10 @@ public class RequestApiController {
     public ResponseEntity<RequestDTO> reject(@PathVariable Long id) {
         User current = currentUserService.getCurrentUser();
         if (current == null) return ResponseEntity.status(403).build();
-        return requestRepository.findById(id)
+        Request request = requestRepository.findById(id).orElse(null);
+        if (request == null) return ResponseEntity.notFound().build();
+        if (!canCurrentUserApproveReject(current, request)) return ResponseEntity.status(403).build();
+        return Optional.of(request)
                 .map(r -> requestService.changeRequestStatus(id, RequestStatusType.REJECTED, current.getId(), null, null))
                 .map(r -> {
                     RequestDTO dto = DtoMapper.toDto(r);

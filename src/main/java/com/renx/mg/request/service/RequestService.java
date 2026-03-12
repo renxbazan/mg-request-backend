@@ -49,6 +49,9 @@ public class RequestService {
 	@Autowired
 	private CustomerRepository customerRepository;
 
+	@Autowired
+	private RequestApproverService requestApproverService;
+
 
 	
 	@Transactional
@@ -118,6 +121,7 @@ public class RequestService {
 
 	private void sendEmailOnCreate(Request request) {
 		try {
+			if (request.getSiteId() == null) return;
 			Site site = siteRepository.findById(request.getSiteId()).orElse(null);
 			if (site == null || site.getCompany() == null) return;
 			String companyName = site.getCompany().getName();
@@ -130,7 +134,18 @@ public class RequestService {
 				String subject = "New Request for " + companyName + " - " + siteName + " (priority: " + priorityLabel + ")";
 				emailService.sendHtmlMessageAsync(to, subject, "New request", bodyHtml);
 			} else {
-				String[] to = emailService.adminCompanyEmail(site.getCompanyId());
+				java.util.List<Long> approverIds = requestApproverService.findUserIdsWhoCanApprove(site.getCompanyId(), site.getId());
+				java.util.List<String> emails = new java.util.ArrayList<>();
+				for (Long uid : approverIds) {
+					User u = userRepository.findById(uid).orElse(null);
+					if (u != null && u.getCustomerId() != null) {
+						Customer c = customerRepository.findById(u.getCustomerId()).orElse(null);
+						if (c != null && c.getEmail() != null && !c.getEmail().isBlank())
+							emails.add(c.getEmail());
+					}
+				}
+				if (emails.isEmpty()) emails.add("aacosta@mgserviceunlimited.com");
+				String[] to = emails.toArray(new String[0]);
 				String subject = "New Request for " + companyName + " - " + siteName + " — APPROVAL PENDING";
 				String bodyWithPending = bodyHtml + "<p style=\"margin-top:16px;padding:12px;background:#e8f4fc;border-left:4px solid #61a1d9;border-radius:4px;\"><strong>Approval pending.</strong></p>";
 				emailService.sendHtmlMessageAsync(to, subject, "New request — approval pending", bodyWithPending);
@@ -178,12 +193,12 @@ public class RequestService {
 	}
 
 	/**
-	 * Indica si la empresa del sitio tiene al menos un usuario con perfil Company Admin (aprobadores).
+	 * Indica si hay al menos un aprobador asignado (en request_approver) para ese site o su company.
 	 */
 	private boolean companyHasApprovers(Long siteId) {
 		if (siteId == null) return false;
 		Long companyId = siteRepository.findById(siteId).map(Site::getCompanyId).orElse(null);
 		if (companyId == null) return false;
-		return !userRepository.findByCustomer_CompanyIdAndProfileId(companyId, Constants.COMPANY_ADMIN_PROFILE_ID).isEmpty();
+		return requestApproverService.hasApproversFor(companyId, siteId);
 	}
 }

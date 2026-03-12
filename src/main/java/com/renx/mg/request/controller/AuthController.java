@@ -75,7 +75,7 @@ public class AuthController {
         resp.setUserId(user.getId());
         resp.setProfileId(user.getProfileId());
         resp.setEmployee(employee);
-        if (Constants.COMPANY_ADMIN_PROFILE_ID.equals(user.getProfileId()) && user.getCustomerId() != null) {
+        if (user.getCustomerId() != null) {
             customerRepository.findById(user.getCustomerId())
                     .ifPresent(c -> resp.setCompanyId(c.getCompanyId()));
         }

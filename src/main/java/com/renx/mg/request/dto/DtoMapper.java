@@ -41,6 +41,7 @@ public final class DtoMapper {
         dto.setAddress(e.getAddress());
         dto.setPhone(e.getPhone());
         dto.setCompanyId(e.getCompanyId());
+        if (e.getCompany() != null) dto.setCompanyName(e.getCompany().getName());
         return dto;
     }
 
